@@ -1,6 +1,7 @@
 import os
 import asyncio
 import random
+from aiohttp import web
 from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError
 
@@ -8,15 +9,14 @@ from telethon.errors import FloodWaitError
 API_ID = 39485214
 API_HASH = 'cd3c7822f740b7b7af660de3cb1c9f9d'
 
-# Danh sách 7 Bot Token của bạn
+# Danh sách 6 Bot Token của bạn
 BOT_TOKENS = [
     '8794826297:AAEQPXXbph-Kk3gQbM5yJWAjjbYlMvJopzE', # Bot 1
     '8991807402:AAG9h73vG6QaMnWWBTiakYePWKwcamsbO1s', # Bot 2
     '8701806868:AAEuz1k-K1eeTkN2Dh3uiM0J17qBrs9fc_E', # Bot 3
     '8315879201:AAHy3Zc1nZr1bSgm4l9dsdzmMwTYZJKj9dU', # Bot 4
     '8555969972:AAH0bwmMuwI8BrBUcCn_d4EUWOQEtD7R8I0', # Bot 5
-    '8681995389:AAGbNTbkRVFQ2LkUetAP39Q6pSBY_nT8hpI', # Bot 6
-    '8778783269:AAENyXzfzPZbuAdya5MUy5HsN5GlDckHxb4'  # Bot 7 mới
+    '8681995389:AAGbNTbkRVFQ2LkUetAP39Q6pSBY_nT8hpI'  # Bot 6
 ]
 
 # ID được phép sử dụng bot
@@ -52,14 +52,30 @@ WAR_WORDS = [
 # Quản lý task chạy nền cho từng nhóm
 active_tasks = {}
 
-# Khởi tạo 7 client tương ứng với 7 token
+# Khởi tạo 6 client tương ứng với 6 token
 clients = []
 for i, token in enumerate(BOT_TOKENS):
-    session_name = f'bot_session_fix_v7_{i+1}'
+    session_name = f'bot_session_fix_v6_{i+1}'
     for f in [f'{session_name}.session', f'{session_name}.session-journal']:
         if os.path.exists(f):
             os.remove(f)
     clients.append(TelegramClient(session_name, API_ID, API_HASH))
+
+# --- MÁY CHỦ WEB GIẢ LẬP ĐỂ GIỮ RENDER KHÔNG BỊ NGỦ ĐÔNG ---
+async def handle_ping(request):
+    return web.Response(text="Bot is alive 24/7!")
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get('/', handle_ping)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    # Render yêu cầu dùng cổng qua biến môi trường PORT, mặc định gán 10000
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"[*] Web server giữ bot đang chạy tại cổng {port}")
+# ----------------------------------------------------------
 
 # Hàm xử lý quyền hạn
 async def check_permissions(event):
@@ -75,7 +91,7 @@ async def check_permissions(event):
         
     return True
 
-# Hàm chạy vòng lặp gửi tin nhắn nền luân phiên 7 bot (Mỗi con cách nhau 1 giây)
+# Hàm chạy vòng lặp gửi tin nhắn nền
 async def run_loop(chat_id, task_type, text_content, target_str):
     bot_index = 0
     while chat_id in active_tasks and active_tasks[chat_id]["running"]:
@@ -92,7 +108,6 @@ async def run_loop(chat_id, task_type, text_content, target_str):
                 
             await current_client.send_message(chat_id, message_to_send, parse_mode='markdown')
             
-            # Xoay vòng qua 7 bot
             bot_index = (bot_index + 1) % len(clients)
             await asyncio.sleep(sleep_time)
             
@@ -112,13 +127,13 @@ async def send_menu(event):
         return
         
     menu_text = (
-        "👑 **HỆ THỐNG QUẢN LÝ 7 BOT WAR & SPAM** 👑\n\n"
+        "👑 **HỆ THỐNG QUẢN LÝ 6 BOT WAR & SPAM** 👑\n\n"
         "✨ **Danh sách lệnh điều khiển:**\n"
-        "👉 `/war [tên hoặc reply]` : Bắt đầu chiến luân phiên 7 bot (1s/con).\n"
-        "👉 `/spam [nội dung]` : Spam nội dung cố định luân phiên 7 bot (1s/con).\n"
+        "👉 `/war [tên hoặc reply]` : Bắt đầu chiến luân phiên 6 bot (1s/con).\n"
+        "👉 `/spam [nội dung]` : Spam nội dung cố định luân phiên 6 bot (1s/con).\n"
         "👉 `/stop` : Dừng toàn bộ các tác vụ đang chạy.\n"
         "👉 `/start` : Hiển thị bảng tính năng này.\n\n"
-        "🚀 *Trạng thái:* Sẵn sàng càn quét!"
+        "🚀 *Trạng thái:* Sẵn sàng càn quét 24/7!"
     )
     await event.reply(menu_text, parse_mode='markdown')
 
@@ -138,7 +153,7 @@ async def start_spam(event):
     active_tasks[chat_id] = {"running": True}
     
     await event.delete()
-    notif = await clients[0].send_message(chat_id, f"Đã bật spam 7 bot (1s/con), nội dung: \"{spam_text}\"")
+    notif = await clients[0].send_message(chat_id, f"Đã bật spam 6 bot (1s/con), nội dung: \"{spam_text}\"")
     await asyncio.sleep(1.5)
     await notif.delete()
     
@@ -207,12 +222,15 @@ async def handle_private_messages(event):
             await event.respond("Đã khóa quyền sử dụng của bạn\nGhi chú:\nĐòi ké bot à thằng đú 🤪👈")
 
 async def main():
-    print("Đang kết nối toàn bộ 7 con bot...")
+    # Khởi động web server phụ để giữ Render luôn sáng
+    await start_web_server()
+    
+    print("Đang kết nối toàn bộ 6 con bot...")
     for i, client in enumerate(clients):
         await client.start(bot_token=BOT_TOKENS[i])
         print(f"-> Bot {i+1} đã sẵn sàng!")
         
-    print("Hệ thống 7 bot đã hoàn tất! Gõ /start để xem menu.")
+    print("Hệ thống 6 bot và Web Server đã hoàn tất!")
     await asyncio.gather(*(client.run_until_disconnected() for client in clients))
 
 if __name__ == '__main__':
