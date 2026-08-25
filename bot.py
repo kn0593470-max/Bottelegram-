@@ -8,12 +8,14 @@ from telethon.errors import FloodWaitError
 API_ID = 39485214
 API_HASH = 'cd3c7822f740b7b7af660de3cb1c9f9d'
 
-# Danh sách 4 Bot Token của bạn
+# Danh sách 6 Bot Token của bạn
 BOT_TOKENS = [
     '8794826297:AAEQPXXbph-Kk3gQbM5yJWAjjbYlMvJopzE', # Bot 1
     '8991807402:AAG9h73vG6QaMnWWBTiakYePWKwcamsbO1s', # Bot 2
     '8701806868:AAEuz1k-K1eeTkN2Dh3uiM0J17qBrs9fc_E', # Bot 3
-    '8315879201:AAHy3Zc1nZr1bSgm4l9dsdzmMwTYZJKj9dU'  # Bot 4
+    '8315879201:AAHy3Zc1nZr1bSgm4l9dsdzmMwTYZJKj9dU', # Bot 4
+    '8555969972:AAH0bwmMuwI8BrBUcCn_d4EUWOQEtD7R8I0', # Bot 5
+    '8681995389:AAGbNTbkRVFQ2LkUetAP39Q6pSBY_nT8hpI'  # Bot 6
 ]
 
 # ID được phép sử dụng bot
@@ -49,24 +51,30 @@ WAR_WORDS = [
 # Quản lý task chạy nền cho từng nhóm
 active_tasks = {}
 
-# Khởi tạo 4 client tương ứng với 4 token
+# Khởi tạo 6 client tương ứng với 6 token
 clients = []
 for i, token in enumerate(BOT_TOKENS):
-    session_name = f'bot_session_fix_{i+1}'
+    session_name = f'bot_session_fix_v5_{i+1}'
     for f in [f'{session_name}.session', f'{session_name}.session-journal']:
         if os.path.exists(f):
             os.remove(f)
     clients.append(TelegramClient(session_name, API_ID, API_HASH))
 
-# Hàm kiểm tra quyền Admin
-async def check_admin(event):
-    sender_id = event.sender_id
-    if sender_id != ADMIN_ID:
+# Hàm xử lý quyền hạn
+async def check_permissions(event):
+    if event.is_private:
+        if event.sender_id == ADMIN_ID:
+            return True
+        await event.respond("Đã khóa quyền sử dụng của bạn\nGhi chú:\nĐòi ké bot à thằng đú 🤪👈")
+        return False
+        
+    if event.sender_id != ADMIN_ID:
         await event.reply("Bố Đức Hot War 2026 🪐🤪👈\nĐòi dùng ké à ccho ngu")
         return False
+        
     return True
 
-# Hàm chạy vòng lặp gửi tin nhắn nền không bị ngắt
+# Hàm chạy vòng lặp gửi tin nhắn nền (Mỗi con cách nhau đúng 1 giây)
 async def run_loop(chat_id, task_type, text_content, target_str):
     bot_index = 0
     while chat_id in active_tasks and active_tasks[chat_id]["running"]:
@@ -75,36 +83,52 @@ async def run_loop(chat_id, task_type, text_content, target_str):
             
             if task_type == "spam":
                 message_to_send = text_content
-                sleep_time = 2.0
             else: # war
                 random_word = random.choice(WAR_WORDS)
                 message_to_send = f"{random_word}{target_str}"
-                sleep_time = 0.2 # 1 giây 5 câu
+                
+            sleep_time = 1.0 
                 
             await current_client.send_message(chat_id, message_to_send, parse_mode='markdown')
             
-            # Xoay vòng liên tục: 0 -> 1 -> 2 -> 3 -> 0
             bot_index = (bot_index + 1) % len(clients)
             await asyncio.sleep(sleep_time)
             
         except FloodWaitError as e:
-            print(f"[!] Bot {bot_index+1} bị FloodWait, phải đợi {e.seconds} giây.")
+            print(f"[!] Bot {bot_index+1} bị giới hạn, chờ {e.seconds}s.")
             await asyncio.sleep(e.seconds)
-        except Exception as ex:
-            # Nếu bot này lỗi, tự động chuyển sang bot tiếp theo không dừng vòng lặp
+        except Exception:
             bot_index = (bot_index + 1) % len(clients)
             await asyncio.sleep(0.5)
+
+# Lệnh /start hiển thị tính năng cho Admin
+@clients[0].on(events.NewMessage(pattern=r'^/start$'))
+async def send_menu(event):
+    if event.sender_id != ADMIN_ID:
+        if event.is_private:
+            await event.respond("Đã khóa quyền sử dụng của bạn\nGhi chú:\nĐòi ké bot à thằng đú 🤪👈")
+        return
+        
+    menu_text = (
+        "👑 **HỆ THỐNG QUẢN LÝ 6 BOT WAR & SPAM** 👑\n\n"
+        "✨ **Danh sách lệnh điều khiển:**\n"
+        "👉 `/war [tên hoặc reply]` : Bắt đầu chiến luân phiên 6 bot (1s/con).\n"
+        "👉 `/spam [nội dung]` : Spam nội dung cố định luân phiên 6 bot (1s/con).\n"
+        "👉 `/stop` : Dừng toàn bộ các tác vụ đang chạy.\n"
+        "👉 `/start` : Hiển thị bảng tính năng này.\n\n"
+        "🚀 *Trạng thái:* Sẵn sàng càn quét!"
+    )
+    await event.reply(menu_text, parse_mode='markdown')
 
 # Lệnh /spam
 @clients[0].on(events.NewMessage(pattern=r'^/spam\s+(.+)'))
 async def start_spam(event):
-    if event.is_private or not await check_admin(event):
+    if not await check_permissions(event):
         return
         
     chat_id = event.chat_id
     spam_text = event.pattern_match.group(1).strip()
     
-    # Nếu nhóm đang chạy cái khác thì dừng trước
     if chat_id in active_tasks:
         active_tasks[chat_id]["running"] = False
         await asyncio.sleep(0.5)
@@ -112,17 +136,16 @@ async def start_spam(event):
     active_tasks[chat_id] = {"running": True}
     
     await event.delete()
-    notif = await clients[0].send_message(chat_id, f"Đã bật spam liên tục 4 bot, nội dung: \"{spam_text}\"")
+    notif = await clients[0].send_message(chat_id, f"Đã bật spam 6 bot (1s/con), nội dung: \"{spam_text}\"")
     await asyncio.sleep(1.5)
     await notif.delete()
     
-    # Chạy vòng lặp nền
     asyncio.create_task(run_loop(chat_id, "spam", spam_text, ""))
 
 # Lệnh /war
 @clients[0].on(events.NewMessage(pattern=r'^/war(?:\s+(.+))?$'))
 async def start_war(event):
-    if event.is_private or not await check_admin(event):
+    if not await check_permissions(event):
         return
         
     chat_id = event.chat_id
@@ -140,7 +163,6 @@ async def start_war(event):
         
     target_str = f" {target}" if target else ""
     
-    # Nếu nhóm đang chạy cái khác thì dừng trước
     if chat_id in active_tasks:
         active_tasks[chat_id]["running"] = False
         await asyncio.sleep(0.5)
@@ -154,13 +176,12 @@ async def start_war(event):
     except Exception:
         pass
 
-    # Chạy vòng lặp nền
     asyncio.create_task(run_loop(chat_id, "war", "", target_str))
 
-# Lệnh dừng
+# Lệnh /stop
 @clients[0].on(events.NewMessage(pattern=r'^/stop$'))
 async def stop_spam(event):
-    if event.is_private or not await check_admin(event):
+    if not await check_permissions(event):
         return
         
     chat_id = event.chat_id
@@ -176,13 +197,20 @@ async def stop_spam(event):
     except Exception:
         pass
 
+# Chặn inbox người lạ (trừ lệnh /start của admin)
+@clients[0].on(events.NewMessage(incoming=True))
+async def handle_private_messages(event):
+    if event.is_private and event.sender_id != ADMIN_ID:
+        if not event.raw_text.startswith('/start'):
+            await event.respond("Đã khóa quyền sử dụng của bạn\nGhi chú:\nĐòi ké bot à thằng đú 🤪👈")
+
 async def main():
-    print("Đang kết nối toàn bộ 4 con bot...")
+    print("Đang kết nối toàn bộ 6 con bot...")
     for i, client in enumerate(clients):
         await client.start(bot_token=BOT_TOKENS[i])
         print(f"-> Bot {i+1} đã sẵn sàng!")
         
-    print("Hệ thống đã sẵn sàng chiến liên tục không nghĩ! Chỉ ID 7907990385 mới dùng được.")
+    print("Hệ thống 6 bot đã hoàn tất! Gõ /start để xem menu.")
     await asyncio.gather(*(client.run_until_disconnected() for client in clients))
 
 await main()
