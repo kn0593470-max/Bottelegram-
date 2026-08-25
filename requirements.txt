@@ -1,1 +1,1 @@
-telethon
+pip install telethon aiohttp
