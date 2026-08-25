@@ -213,4 +213,6 @@ async def main():
     print("Hệ thống 6 bot đã hoàn tất! Gõ /start để xem menu.")
     await asyncio.gather(*(client.run_until_disconnected() for client in clients))
 
-await main()
+# Chạy chương trình chuẩn cú pháp Python
+if __name__ == '__main__':
+    asyncio.run(main())
