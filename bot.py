@@ -70,7 +70,6 @@ async def start_web_server():
     app.router.add_get('/', handle_ping)
     runner = web.AppRunner(app)
     await runner.setup()
-    # Render yêu cầu dùng cổng qua biến môi trường PORT, mặc định gán 10000
     port = int(os.environ.get("PORT", 10000))
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
@@ -91,32 +90,34 @@ async def check_permissions(event):
         
     return True
 
-# Hàm chạy vòng lặp gửi tin nhắn nền
-async def run_loop(chat_id, task_type, text_content, target_str):
-    bot_index = 0
+# Hàm chạy vòng lặp riêng cho từng bot để spam song song không chờ đợi nhau
+async def single_bot_loop(bot_index, client, chat_id, task_type, text_content, target_str):
     while chat_id in active_tasks and active_tasks[chat_id]["running"]:
-        try:
-            current_client = clients[bot_index]
-            
-            if task_type == "spam":
-                message_to_send = text_content
-            else: # war
-                random_word = random.choice(WAR_WORDS)
-                message_to_send = f"{random_word}{target_str}"
+            try:
+                if task_type == "spam":
+                    message_to_send = text_content
+                else: 
+                    random_word = random.choice(WAR_WORDS)
+                    message_to_send = f"{random_word}{target_str}"
+                    
+                await client.send_message(chat_id, message_to_send, parse_mode='markdown')
                 
-            sleep_time = 1.0 
+                # Mỗi bot cách nhau 1 giây riêng biệt (6 bot chạy song song sẽ tạo tốc độ cực khủng)
+                await asyncio.sleep(1.0)
                 
-            await current_client.send_message(chat_id, message_to_send, parse_mode='markdown')
-            
-            bot_index = (bot_index + 1) % len(clients)
-            await asyncio.sleep(sleep_time)
-            
-        except FloodWaitError as e:
-            print(f"[!] Bot {bot_index+1} bị giới hạn, chờ {e.seconds}s.")
-            await asyncio.sleep(e.seconds)
-        except Exception:
-            bot_index = (bot_index + 1) % len(clients)
-            await asyncio.sleep(0.5)
+            except FloodWaitError as e:
+                print(f"[!] Bot {bot_index+1} bị giới hạn, chờ {e.seconds}s.")
+                await asyncio.sleep(e.seconds)
+            except Exception:
+                await asyncio.sleep(0.5)
+
+async def run_all_bots(chat_id, task_type, text_content, target_str):
+    # Khởi chạy đồng thời 6 task cho 6 bot chạy độc lập
+    tasks = [
+        asyncio.create_task(single_bot_loop(i, clients[i], chat_id, task_type, text_content, target_str))
+        for i in range(len(clients))
+    ]
+    await asyncio.gather(*tasks)
 
 # Lệnh /start hiển thị tính năng cho Admin
 @clients[0].on(events.NewMessage(pattern=r'^/start$'))
@@ -129,8 +130,8 @@ async def send_menu(event):
     menu_text = (
         "👑 **HỆ THỐNG QUẢN LÝ 6 BOT WAR & SPAM** 👑\n\n"
         "✨ **Danh sách lệnh điều khiển:**\n"
-        "👉 `/war [tên hoặc reply]` : Bắt đầu chiến luân phiên 6 bot (1s/con).\n"
-        "👉 `/spam [nội dung]` : Spam nội dung cố định luân phiên 6 bot (1s/con).\n"
+        "👉 `/war [tên hoặc reply]` : 6 bot chiến song song liên tục không ngừng.\n"
+        "👉 `/spam [nội dung]` : 6 bot spam song song nội dung cố định.\n"
         "👉 `/stop` : Dừng toàn bộ các tác vụ đang chạy.\n"
         "👉 `/start` : Hiển thị bảng tính năng này.\n\n"
         "🚀 *Trạng thái:* Sẵn sàng càn quét 24/7!"
@@ -153,11 +154,11 @@ async def start_spam(event):
     active_tasks[chat_id] = {"running": True}
     
     await event.delete()
-    notif = await clients[0].send_message(chat_id, f"Đã bật spam 6 bot (1s/con), nội dung: \"{spam_text}\"")
+    notif = await clients[0].send_message(chat_id, f"Đã bật 6 bot spam song song, nội dung: \"{spam_text}\"")
     await asyncio.sleep(1.5)
     await notif.delete()
     
-    asyncio.create_task(run_loop(chat_id, "spam", spam_text, ""))
+    asyncio.create_task(run_all_bots(chat_id, "spam", spam_text, ""))
 
 # Lệnh /war
 @clients[0].on(events.NewMessage(pattern=r'^/war(?:\s+(.+))?$'))
@@ -193,7 +194,7 @@ async def start_war(event):
     except Exception:
         pass
 
-    asyncio.create_task(run_loop(chat_id, "war", "", target_str))
+    asyncio.create_task(run_all_bots(chat_id, "war", "", target_str))
 
 # Lệnh /stop
 @clients[0].on(events.NewMessage(pattern=r'^/stop$'))
@@ -222,7 +223,6 @@ async def handle_private_messages(event):
             await event.respond("Đã khóa quyền sử dụng của bạn\nGhi chú:\nĐòi ké bot à thằng đú 🤪👈")
 
 async def main():
-    # Khởi động web server phụ để giữ Render luôn sáng
     await start_web_server()
     
     print("Đang kết nối toàn bộ 6 con bot...")
